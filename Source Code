@@ -1,0 +1,172 @@
+#!/bin/bash
+
+# Directory structure setup
+BASE_DIR="$HOME/file_sharing_system"
+ADMIN_DIR="$BASE_DIR/admin"
+FILES_DIR="$BASE_DIR/files"
+USERS_DIR="$BASE_DIR/users"
+LOGS_DIR="$BASE_DIR/logs"
+
+# Create necessary directories if they don't exist
+mkdir -p "$ADMIN_DIR" "$FILES_DIR" "$USERS_DIR" "$LOGS_DIR"
+
+# Function to register new user
+register_user() {
+    local user_type=$1
+    local username=$(zenity --entry --title="Register" --text="Enter username:")
+    if [ -z "$username" ]; then
+        return
+    fi
+    
+    local password=$(zenity --password --title="Register")
+    if [ -z "$password" ]; then
+        return
+    fi
+    
+    if [ -f "$USERS_DIR/$username" ]; then
+        zenity --error --text="User already exists!"
+        return
+    fi  # Fixed syntax: Changed } to fi
+    
+    echo "$password:$user_type" > "$USERS_DIR/$username"
+    zenity --info --text="Registration successful!"
+}
+
+# Function to verify login
+verify_login() {
+    local username=$1
+    local password=$2
+    
+    if [ ! -f "$USERS_DIR/$username" ]; then
+        return 1
+    fi
+    
+    local stored_info=$(cat "$USERS_DIR/$username")  # Added 'local' keyword
+    local stored_password=$(echo "$stored_info" | cut -d':' -f1)  # Added quotes
+    local user_type=$(echo "$stored_info" | cut -d':' -f2)  # Added quotes
+    
+    if [ "$password" = "$stored_password" ]; then
+        echo "$user_type"
+        return 0
+    fi
+    return 1
+}
+
+# Function for student operations
+student_operations() {
+    local username=$1
+    while true; do
+        action=$(zenity --list --title="Student Menu" --column="Options" \
+            "Download File" \
+            "Read File" \
+            "Logout")
+            
+        case $action in
+            "Download File")
+                file=$(zenity --list --title="Available Files" --column="Files" $(ls "$FILES_DIR"))
+                if [ ! -z "$file" ]; then
+                    cp "$FILES_DIR/$file" "$HOME"
+                    echo "$(date): $username downloaded $file" >> "$LOGS_DIR/downloads.log"
+                    zenity --info --text="File downloaded to home directory"
+                fi
+                ;;
+            "Read File")
+                file=$(zenity --list --title="Available Files" --column="Files" $(ls "$FILES_DIR"))
+                if [ ! -z "$file" ]; then
+                    zenity --text-info --title="$file" --filename="$FILES_DIR/$file"
+                fi
+                ;;
+            "Logout"|"")
+                return
+                ;;
+        esac
+    done
+}
+
+# Function for admin operations
+admin_operations() {
+    local username=$1
+    while true; do
+        action=$(zenity --list --title="Admin Menu" --column="Options" \
+            "Add File" \
+            "Delete File" \
+            "Read File" \
+            "View Download Logs" \
+            "Logout")
+            
+        case $action in
+            "Add File")
+                file=$(zenity --file-selection --title="Select File to Add")
+                if [ ! -z "$file" ]; then
+                    cp "$file" "$FILES_DIR"
+                    zenity --info --text="File added successfully"
+                fi
+                ;;
+            "Delete File")
+                file=$(zenity --list --title="Select File to Delete" --column="Files" $(ls "$FILES_DIR"))
+                if [ ! -z "$file" ]; then
+                    rm "$FILES_DIR/$file"
+                    zenity --info --text="File deleted successfully"
+                fi
+                ;;
+            "Read File")
+                file=$(zenity --list --title="Available Files" --column="Files" $(ls "$FILES_DIR"))
+                if [ ! -z "$file" ]; then
+                    zenity --text-info --title="$file" --filename="$FILES_DIR/$file"
+                fi
+                ;;
+            "View Download Logs")
+                zenity --text-info --title="Download Logs" --filename="$LOGS_DIR/downloads.log"
+                ;;
+            "Logout"|"")
+                return
+                ;;
+        esac
+    done
+}
+
+# Main menu loop
+while true; do
+    action=$(zenity --list --title="File Sharing System" --column="Options" \
+        "Admin Login" \
+        "Student Login" \
+        "Admin Registration" \
+        "Student Registration" \
+        "Exit")
+        
+    case $action in
+        "Admin Login"|"Student Login")
+            username=$(zenity --entry --title="Login" --text="Enter username:")
+            if [ -z "$username" ]; then
+                continue
+            fi
+            
+            password=$(zenity --password --title="Login")
+            if [ -z "$password" ]; then
+                continue
+            fi
+            
+            user_type=$(verify_login "$username" "$password")
+            if [ $? -eq 0 ]; then
+                if [ "$action" = "Admin Login" ] && [ "$user_type" = "admin" ]; then
+                    admin_operations "$username"
+                elif [ "$action" = "Student Login" ] && [ "$user_type" = "student" ]; then
+                    student_operations "$username"
+                else
+                    zenity --error --text="Invalid login type!"
+                fi
+            else
+                zenity --error --text="Invalid credentials!"
+            fi
+            ;;
+        "Admin Registration")
+            register_user "admin"
+            ;;
+        "Student Registration")
+            register_user "student"
+            ;;
+        "Exit"|"")
+            exit 0
+            ;;
+    esac
+done
